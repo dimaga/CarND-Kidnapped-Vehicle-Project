@@ -2,7 +2,7 @@
  * particle_filter.cpp
  *
  *  Created on: Dec 12, 2016
- *      Author: Tiffany Huang
+ *	  Author: Tiffany Huang
  */
 
 #include <random>
@@ -12,6 +12,8 @@
 #include <random>
 #include <cmath>
 #include <cassert>
+#include <list>
+#include <vector>
 
 #include "particle_filter.h"
 
@@ -28,6 +30,17 @@ double normPi(double angleRad) {
 
 	return angleRad;
 }
+
+struct DistanceEntry {
+	double distance_sq;
+	int predicted_idx;
+	int observed_idx;
+
+	bool operator<(const DistanceEntry& other) const {
+		return distance_sq < other.distance_sq;
+	}
+};
+
 }
 
 
@@ -35,12 +48,12 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	Particle p;
 	p.weight = 1.0;
 
-	std::default_random_engine gen;
+	std::mt19937 gen;
 	std::normal_distribution<double> N_x(0, std[0]);
 	std::normal_distribution<double> N_y(0, std[1]);
 	std::normal_distribution<double> N_theta(0, std[2]);
 
-	num_particles = 1000;
+	num_particles = 100;
 	for(int i = 0; i < num_particles; ++i) {
 		p.id = i;
 		p.x = x + N_x(gen);
@@ -56,6 +69,20 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 void ParticleFilter::prediction(double delta_t, double std_pos[], double velocity, double yaw_rate) {
 	using std::sin;
 	using std::cos;
+
+	std::mt19937 gen;
+	std::normal_distribution<double> N_x(0, std_pos[0]);
+	std::normal_distribution<double> N_y(0, std_pos[1]);
+	std::normal_distribution<double> N_theta(0, std_pos[2]);
+
+	for(int i = 0; i < num_particles; ++i) {
+		Particle& p = particles.at(i);
+
+		// Randomizing before and after prediction gives better filter performance
+		p.theta = normPi(p.theta + N_theta(gen) * 0.5);
+		p.x += N_x(gen) * 0.5;
+		p.y += N_y(gen) * 0.5;
+	}
 
 	if (std::abs(yaw_rate) > 1e-5) {
 		const double v_yr = velocity / yaw_rate;
@@ -75,40 +102,53 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 		}
 	}
 
-	std::default_random_engine gen;
-	std::normal_distribution<double> N_x(0, std_pos[0]);
-	std::normal_distribution<double> N_y(0, std_pos[1]);
-	std::normal_distribution<double> N_theta(0, std_pos[2]);
-
 	for(int i = 0; i < num_particles; ++i) {
 		Particle& p = particles.at(i);
-		p.theta = normPi(p.theta + yaw_rate * delta_t + N_theta(gen));
+		p.theta = normPi(p.theta + yaw_rate * delta_t);
 
-		p.x += N_x(gen);
-		p.y += N_y(gen);
+		// Randomizing before and after prediction gives better filter performance
+		p.theta = normPi(p.theta + N_theta(gen) * 0.5);
+		p.x += N_x(gen) * 0.5;
+		p.y += N_y(gen) * 0.5;
 	}
 }
 
 void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations) {
 	assert(!predicted.empty());
 
+  	// Keep all distances in a table, start associations with best matches
+	std::vector< DistanceEntry > distances_sq;
+
 	for (std::size_t oi = 0, oi_count = observations.size(); oi < oi_count; ++oi) {
 		LandmarkObs& obs = observations.at(oi);
+		obs.id = -1;
 
-		obs.id = 0;
+		for (std::size_t pi = 0, pi_count = predicted.size(); pi < pi_count; ++pi) {
+	  		LandmarkObs& pred = predicted.at(pi);
+		  	pred.id = -1;
 
-		double min_distance_sq =
-						(predicted.front().x - obs.x) * (predicted.front().x - obs.x)
-						+ (predicted.front().y - obs.y) * (predicted.front().y - obs.y);
+			DistanceEntry d;
+			d.distance_sq = (pred.x - obs.x) * (pred.x - obs.x) + (pred.y - obs.y) * (pred.y - obs.y);
+			d.predicted_idx = pi;
+		    d.observed_idx = oi;
+			distances_sq.push_back(d);
+		}
+  	}
 
-		for (std::size_t pi = 1, pi_count = predicted.size(); pi < pi_count; ++pi) {
-			const LandmarkObs& pred = predicted.at(pi);
+	std::sort(distances_sq.begin(), distances_sq.end());
 
-			const double cur_distance_sq = (pred.x - obs.x) * (pred.x - obs.x) + (pred.y - obs.y) * (pred.y - obs.y);
-			if (cur_distance_sq < min_distance_sq) {
-				min_distance_sq = cur_distance_sq;
-				obs.id = static_cast<int>(pi);
-			}
+	for (std::size_t di = 0, di_count = distances_sq.size(); di < di_count; ++di) {
+		const DistanceEntry& distance_entry = distances_sq.at(di);
+		if (distance_entry.distance_sq > 7 * 7) {
+			// All other links are probably outliers
+			break;
+		}
+
+	  	LandmarkObs& obs = observations.at(distance_entry.observed_idx);
+		LandmarkObs& pred = predicted.at(distance_entry.predicted_idx);
+	  	if (-1 == obs.id && -1 == pred.id) {
+			obs.id = distance_entry.predicted_idx;
+			pred.id = distance_entry.observed_idx;
 		}
 	}
 }
@@ -133,8 +173,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 				// This landmark will not be visible, exclude it from predicted list for better runtime performance
 				continue;
 			}
-
-
+		  
 			const double cos_theta = std::cos(p.theta);
 			const double sin_theta = std::sin(p.theta);
 
@@ -158,10 +197,16 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		double neg_log_w = 0;
 		for (std::size_t oi = 0, oi_count = observations.size(); oi < oi_count; ++oi) {
 			const LandmarkObs &obs = observations.at(oi);
-			const LandmarkObs& pred = predicted.at(obs.id);
 
-			neg_log_w += 0.5 * ((obs.x - pred.x) * (obs.x - pred.x) / std_landmark[0]);
-			neg_log_w += 0.5 * ((obs.y - pred.y) * (obs.y - pred.y) / std_landmark[1]);
+		  	if (-1 == obs.id) {
+			  	// No good association, use sensor range as maximum error
+				neg_log_w += 0.5 * (0.5 * sensor_range * sensor_range / std_landmark[0]);
+				neg_log_w += 0.5 * (0.5 * sensor_range * sensor_range / std_landmark[1]);
+			} else {
+				const LandmarkObs& pred = predicted.at(obs.id);
+				neg_log_w += 0.5 * ((obs.x - pred.x) * (obs.x - pred.x) / std_landmark[0]);
+				neg_log_w += 0.5 * ((obs.y - pred.y) * (obs.y - pred.y) / std_landmark[1]);
+			}
 		}
 
 		p.weight = std::exp(-neg_log_w);
@@ -177,16 +222,16 @@ void ParticleFilter::resample() {
 
 	std::vector<Particle> new_particles;
 
-	std::default_random_engine gen;
+	std::mt19937 gen;
 	std::discrete_distribution<> d(weights.begin(), weights.end());
 	for (int pi = 0; pi < num_particles; ++pi) {
 		Particle new_particle = particles.at(d(gen));
-        new_particle.weight = 1.0;
+		new_particle.weight = 1.0;
 
 		new_particles.push_back(new_particle);
 	}
 
-	new_particles = particles;
+    particles = new_particles;
 }
 
 void ParticleFilter::write(std::string filename) {
