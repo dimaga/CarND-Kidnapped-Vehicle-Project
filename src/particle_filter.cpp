@@ -130,7 +130,7 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 			DistanceEntry d;
 			d.distance_sq = (pred.x - obs.x) * (pred.x - obs.x) + (pred.y - obs.y) * (pred.y - obs.y);
 			d.predicted_idx = pi;
-		    d.observed_idx = oi;
+			d.observed_idx = oi;
 			distances_sq.push_back(d);
 		}
   	}
@@ -158,6 +158,10 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
 	std::vector<LandmarkObs> predicted;
 
+	const double std_landmark_x_sq = std_landmark[0] * std_landmark[0];
+	const double std_landmark_y_sq = std_landmark[1] * std_landmark[1];
+	const double sensor_range_sq = sensor_range * sensor_range;
+
 	for (int pi = 0; pi < num_particles; ++pi) {
 		Particle& p = particles.at(pi);
 
@@ -169,7 +173,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
 			const double tx = single_landmark.x_f - p.x;
 			const double ty = single_landmark.y_f - p.y;
-			if (tx * tx + ty * ty > sensor_range * sensor_range) {
+			if (tx * tx + ty * ty > sensor_range_sq) {
 				// This landmark will not be visible, exclude it from predicted list for better runtime performance
 				continue;
 			}
@@ -200,12 +204,12 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
 		  	if (-1 == obs.id) {
 			  	// No good association, use sensor range as maximum error
-				neg_log_w += 0.5 * (0.5 * sensor_range * sensor_range / (std_landmark[0] * std_landmark[0]));
-				neg_log_w += 0.5 * (0.5 * sensor_range * sensor_range / (std_landmark[1] * std_landmark[1]));
+				neg_log_w += 0.5 * (0.5 * sensor_range_sq / std_landmark_x_sq);
+				neg_log_w += 0.5 * (0.5 * sensor_range_sq / std_landmark_y_sq);
 			} else {
 				const LandmarkObs& pred = predicted.at(obs.id);
-				neg_log_w += 0.5 * ((obs.x - pred.x) * (obs.x - pred.x) / (std_landmark[0] * std_landmark[0]));
-				neg_log_w += 0.5 * ((obs.y - pred.y) * (obs.y - pred.y) / (std_landmark[1] * std_landmark[1]));
+				neg_log_w += 0.5 * ((obs.x - pred.x) * (obs.x - pred.x) / std_landmark_x_sq);
+				neg_log_w += 0.5 * ((obs.y - pred.y) * (obs.y - pred.y) / std_landmark_y_sq);
 			}
 		}
 
@@ -231,7 +235,7 @@ void ParticleFilter::resample() {
 		new_particles.push_back(new_particle);
 	}
 
-    particles = new_particles;
+	particles = new_particles;
 }
 
 void ParticleFilter::write(std::string filename) {
