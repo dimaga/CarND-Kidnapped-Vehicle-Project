@@ -129,6 +129,12 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
 			const double tx = single_landmark.x_f - p.x;
 			const double ty = single_landmark.y_f - p.y;
+			if (tx * tx + ty * ty > sensor_range * sensor_range) {
+				// This landmark will not be visible, exclude it from predicted list for better runtime performance
+				continue;
+			}
+
+
 			const double cos_theta = std::cos(p.theta);
 			const double sin_theta = std::sin(p.theta);
 
@@ -136,6 +142,12 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			obs.y = -tx * sin_theta + ty * cos_theta;
 
 			predicted.push_back(obs);
+		}
+
+		if (predicted.empty()) {
+			// Exclude that particle as highly unlikely
+			p.weight = 0.0;
+			continue;
 		}
 
 		dataAssociation(predicted, observations);
@@ -152,7 +164,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			neg_log_w += 0.5 * ((obs.y - pred.y) * (obs.y - pred.y) / std_landmark[1]);
 		}
 
-		p.weight = -std::exp(neg_log_w);
+		p.weight = std::exp(-neg_log_w);
 	}
 }
 
@@ -170,7 +182,7 @@ void ParticleFilter::resample() {
 	for (int pi = 0; pi < num_particles; ++pi) {
 		Particle new_particle = particles.at(d(gen));
         new_particle.weight = 1.0;
-      
+
 		new_particles.push_back(new_particle);
 	}
 
