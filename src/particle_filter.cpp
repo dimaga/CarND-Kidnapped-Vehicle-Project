@@ -173,7 +173,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 				// This landmark will not be visible, exclude it from predicted list for better runtime performance
 				continue;
 			}
-		  
+
 			const double cos_theta = std::cos(p.theta);
 			const double sin_theta = std::sin(p.theta);
 
@@ -200,12 +200,12 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
 		  	if (-1 == obs.id) {
 			  	// No good association, use sensor range as maximum error
-				neg_log_w += 0.5 * (0.5 * sensor_range * sensor_range / std_landmark[0]);
-				neg_log_w += 0.5 * (0.5 * sensor_range * sensor_range / std_landmark[1]);
+				neg_log_w += 0.5 * (0.5 * sensor_range * sensor_range / (std_landmark[0] * std_landmark[0]));
+				neg_log_w += 0.5 * (0.5 * sensor_range * sensor_range / (std_landmark[1] * std_landmark[1]));
 			} else {
 				const LandmarkObs& pred = predicted.at(obs.id);
-				neg_log_w += 0.5 * ((obs.x - pred.x) * (obs.x - pred.x) / std_landmark[0]);
-				neg_log_w += 0.5 * ((obs.y - pred.y) * (obs.y - pred.y) / std_landmark[1]);
+				neg_log_w += 0.5 * ((obs.x - pred.x) * (obs.x - pred.x) / (std_landmark[0] * std_landmark[0]));
+				neg_log_w += 0.5 * ((obs.y - pred.y) * (obs.y - pred.y) / (std_landmark[1] * std_landmark[1]));
 			}
 		}
 
