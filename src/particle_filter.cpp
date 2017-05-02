@@ -168,7 +168,9 @@ void ParticleFilter::resample() {
 	std::default_random_engine gen;
 	std::discrete_distribution<> d(weights.begin(), weights.end());
 	for (int pi = 0; pi < num_particles; ++pi) {
-		const Particle new_particle = particles.at(d(gen));
+		Particle new_particle = particles.at(d(gen));
+        new_particle.weight = 1.0;
+      
 		new_particles.push_back(new_particle);
 	}
 
